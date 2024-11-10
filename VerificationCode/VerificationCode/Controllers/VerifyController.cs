@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using System;
 using VerificationCode.Models;
 using VerificationCode.Models.Request;
+using VerificationCode.Service;
 
 // For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
 
@@ -12,13 +13,13 @@ namespace VerificationCode.Controllers
     [ApiController]
     public class VerifyController : ControllerBase
     {
-        private readonly WebContext _context;
+        private readonly TokenService tokenService;
 
         private const int EXPIRED_MINUTES = 5;
 
         public VerifyController(WebContext context)
         {
-            _context = context;
+            tokenService = new TokenService(context);
         }
 
         [Route("SendCode")]
@@ -32,48 +33,24 @@ namespace VerificationCode.Controllers
             string identity = (type == Models.Type.Email) ?
                 request.Email :
                 request.Phone;
-          
-            Token token = _context.Tokens.SingleOrDefault(x => x.Identity == identity && x.Usage == request.Usage && x.Type == type);
-            if (token == null)
-            {
-                token = new Token();
-                token.Identity = identity;
-                token.Usage = request.Usage;
-                token.Type = type;
-            }
-            
+
+            Token token = tokenService.GetToken(identity, request.Usage, type);
+
+
             token.Code = generateCode();
             token.CreateDateTime = DateTime.Now;
             token.ExpireDateTime = DateTime.Now.AddMinutes(EXPIRED_MINUTES);
 
-            if (token.Id == 0)
-            {
-                _context.Tokens.Add(token);
-            }
-            else
-            {
-                _context.Tokens.Update(token);
-            }
-
-            _context.SaveChanges();
+            tokenService.UpdateToken(token);
         }
 
         [Route("Register")]
         [HttpPost]
         public bool Register(RegisterRequest request)
         {
-            bool verifyResult = verify(request.Email, request.Code, request.Usage);
+            bool verifyResult = tokenService.Verify(request.Email, request.Code, request.Usage);
             return verifyResult;
 
-        }
-
-        private bool verify(string identity, string code, Usage usage)
-        {
-            return _context.Tokens.Any(p =>
-            p.Code == code &&
-            p.Identity == identity &&
-            p.Usage == usage &&
-            p.ExpireDateTime > DateTime.Now);
         }
 
         private string generateCode()
